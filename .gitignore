@@ -1,0 +1,11 @@
+template.html
+template.ipynb
+template_files/*
+Manifest.toml
+
+template.*
+!template.qmd
+
+data/*.nc
+data/*.csv
+.jupyter_cache/

@@ -1,0 +1,165 @@
+---
+title: "Lab 07"
+subtitle: "Convergence, Central Limits, and Fat Tails"
+jupyter: julia-1.9
+date: 2023-11-03
+# author: "Your name here (your netID here)" # UNCOMMENT AND ADD YOUR NAME
+
+number-sections: true
+code-annotations: hover
+
+kind: "Lab"
+Module: "3"
+categories:
+    - "Module 3"
+    - "Labs"
+
+format:
+    html: 
+        toc-depth: 3
+    docx: 
+        toc: true
+        toc-depth: 3
+        fig-format: png
+---
+
+# Intro
+
+An important idea in statistics is the [Central Limit Theorem (CLT)](https://en.wikipedia.org/wiki/Central_limit_theorem), which states (much more elegantly and precisely) that the sum of many **independent** random variables is approximately normally distributed, even if the underlying process is not randomly distributed (as long as it's moderately well-behaved).
+This is often used to justify approximating the average of many data points, and the uncertainty in this average, as a normal distribution.
+
+The CLT is a powerful tool, but intuition we develop about working with distributions that behave "nicely" can be misleading when we are working with extreme value distributions.
+The purpose of this lab is to explore this idea and to build some intuition about sampling uncertainty and sample statistics when working with extreme value distributions.
+
+## Setup
+
+Remember to `git clone` to your machine, then `activate` and `instantiate` the environment, as we have done in previous labs.
+If you are having trouble, you may want to `build IJulia` in the Pkg manager.
+
+**Do not use additional packages for this assignment,** though you are welcome to look at the documentation or implementation of other packages for nearest-neighbors methods.
+
+```{julia}
+#| output: false
+using Distributions
+using Plots
+using StatsBase
+using StatsPlots
+
+Plots.default(; margin=4Plots.mm, size=(700, 400), linewidth=2)
+```
+
+# Normal distribution
+
+To build some intuition, let's create a Normal distribution with a very large standard deviation relative to its mean:
+
+```{julia}
+#| output: false
+dist_normal = Normal(2.5, 10)
+```
+
+We can calculate its mean and standard deviation
+
+```{julia}
+mean(dist_normal), std(dist_normal)
+```
+
+Because we're going to be plotting a lot of distributions, let's define a function to do this for us:
+
+```{julia}
+#| output: false
+function plot_dist(dist; name="", xlims=missing)
+    ub = quantile(dist, 0.998)
+    lb = quantile(dist, 0.002)
+    p = plot(x -> pdf(dist, x); ylabel="Probability Density", label=name, xlims=(lb, ub))
+    !ismissing(xlims) && xlims!(p, xlims)
+    return p
+end
+
+plot_dist(dist_normal; name="Normal Distribution")
+```
+
+We can see that even though this distribution has a large standard deviation, it still has that classical "bell" shape.
+We can also sample from its probability density function and plot a histogram of those samples. That output should look like the probability density function shown above!
+
+```{julia}
+samples_normal = rand(dist_normal, 100_000)
+histogram(samples_normal; normalize=:pdf, label="Samples", ylabel="Probability Density")
+plot!(dist_normal; label="True", linewidth=4)
+```
+
+We can see that our large sample size leads to us being able to sample well from the mean.
+
+## Running statistics
+
+An important idea in statistics is that we can calculate descriptive statistics from our data.
+For example, things like the mean, standard deviation, skewness, or 99th percentile.
+An interesting question to ask is how many observations we need to get a reliable estimate of these "sample statistics".
+
+Let's start by looking at the mean with our 100,000 samples.
+We could do this with a loop, but it turns out to be inefficient.
+Instead, we'll define some more efficient functions
+
+```{julia}
+#| output: false
+cumul_mean(x) = cumsum(x) ./ (1:length(x))
+cumul_std(x) = sqrt.(cumsum(x .- cum_mean(x)) .^ 2 ./ (1:length(x)))
+```
+
+Now let's plot the cumulative mean of our samples.
+
+```{julia}
+plot(
+    cumul_mean(samples_normal); label="Cumulative Mean", ylabel="Mean", xlabel="Sample Size"
+)
+hline!([mean(dist_normal)]; label="True Mean")
+```
+
+We can see that we very rapidly converge to the "true" value.
+Of course, maybe we just got lucky with our unique sample.
+We can repeat this experiment many times and see how often we get a good estimate of the mean (note the log $x$ scale!)
+
+```{julia}
+plot(; xscale=:log10)
+for i in 1:10
+    samples_normal = rand(dist_normal, 10_000)
+    plot!(cumul_mean(samples_normal); label=nothing, linewidth=1, color=:gray)
+end
+hline!([mean(dist_normal)]; label="True Mean")
+```
+
+## Sample extrema
+
+Another question we can ask is how much extreme values, like the minimum or maximum of our samples, vary from one random realization to the next.
+
+We can answer this question in a very simple experiment.
+We'll draw `N` samples from our distribution, and take the maximum.
+We'll repeat this `M` times, and plot the distribution of the maximums.
+
+```{julia}
+N = 100
+M = 1_000
+maxima = [maximum(rand(dist_normal, N)) for i in 1:M]
+histogram(
+    maxima;
+    normalize=:pdf,
+    label="Maxima",
+    ylabel="Probability Density",
+    title="Normal Distribution with $N Samples",
+)
+```
+
+We can see from this that even though the Normal distribution is "well-behaved", the maximum of a sample of 100 observations can vary enormously from one set of 100 draws to the next.
+(And of course, we are assuming that we know the true distribution!)
+
+# Your turn
+
+Repeat the analysis above for two distributions from the following list
+
+- A $T$ distribution (`TDist`). Make sure you know that the "degrees of freedom" parameter does.
+- A GEV (`GeneralizedExtremeValue`) distribution with a positive shape parameter
+- A GEV (`GeneralizedExtremeValue`) distribution with a negative shape parameter
+- A Cauchy (`Cauchy`) distribution
+
+You may use something else creative if you're interested.
+Add plenty of explanatory text to illustrate what you've found.
+Be prepared to put together a very short presentation on your findings.
