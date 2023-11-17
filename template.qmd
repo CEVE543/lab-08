@@ -1,6 +1,5 @@
 ---
-title: "Lab 08"
-subtitle: "$K$-Means Clustering"
+title: "Lab 08: $K$-Means Clustering"
 jupyter: julia-1.9
 date: 2023-11-17
 # author: "Your name here (your netID here)" # UNCOMMENT AND ADD YOUR NAME
@@ -17,9 +16,179 @@ categories:
 format:
     html: 
         toc-depth: 3
+        html-math-method: mathjax
+        include-in-header: mathjax-config.html
     docx: 
         toc: true
         toc-depth: 3
         fig-format: png
 ---
+
+# K-Means Clustering
+
+$K$-Means Clustering is a widely-used unsupervised machine learning algorithm, ideal for partitioning datasets into distinct, non-overlapping groups or 'clusters'.
+We've seen it in the context of regional frequency analysis.
+
+## Algorithm
+
+- **Inputs:** $k$ (number of clusters), $\vb{x} = \{x_1, x_2, x_n\}$ (data points)
+- **Outputs:** $\vb{c} = \{\mu_1, \mu_2, \ldots, \mu_n\}$ (cluster assignments), $\vb{\mu} = \{\mu_1, \mu_2, \ldots, \mu_k \}$ (cluster centroids)
+- **Steps:**
+    1. Randomly initialize $K$ cluster centers: $\vb{\mu} = \mu_1^{(0)}, \mu_2^{(0)}, \ldots, \mu_k^{(0)} \in \mathbb{R}^d$
+    2. Iterate until convergence:
+        1. Assign each observation $x_i$ to the closest (in Euclidean distance) mean: $$c_i^{(j)} = \arg_{k=1, \ldots, K} \min \|x_i - \mu_k^{(j)} \|$$
+        1. Recompute each $\mu_k^{(j)}$ as the mean of all points assigned to it
+        1. Terminate when the total change of the cluster centroids satisfies $$ \sum_{k=1}^K \| \mu_k^{(j)} - \mu_k^{(j-1)} \| < \tau$$
+
+# Instructions
+
+```{julia}
+using CSV
+using DataFrames
+using Plots
+using StatsBase: mean, std
+```
+
+We will work in an external script.
+Open the file `kmeans.jl` and edit the functions provided.
+It's a Julia file, so you can run line by line and work in the REPL.
+
+To make the functions created available to you here, run the following command:
+
+```{julia}
+include("kmeans.jl")
+```
+
+## Initialize Centroids
+
+First, edit the `init_centroids` function.
+It takes in a matrix $X_{n \times d}$ indexed by $n$ observations and $d$ features, and returns a matrix with $K$ rows (one for each centroid) and $d$ columns (one for each feature) where $d$ is the number of features of $X$.
+The code provided initializes each centroid to a random value.
+
+You can change this to whatever you like -- be sure to explain your reasoning.
+One common approach is to choose $k$ random observations from the dataset as your initial centroids.
+Be sure to make sure that your centroids are distinct!
+
+## Euclidean Distance
+
+In order to assign observations to clusters, we need to be able to compute the distance between between an observation and a centroid.
+We will use the Euclidean distance, which is defined above.
+This function should take in two generic vectors and return a scalar.
+
+## Assign Clusters
+
+There is just one line of code to edit here.
+
+::: {.callout-hint}
+The `argmin` function may be your friend.
+:::
+
+## Update Centroids
+
+As you loop through the algorithm, you will need to update the centroids.
+This function takes in the data matrix $X$, the cluster assignments $\vb{c}$, which is a vector of integers, and the number of clusters $k$.
+It returns a matrix with $K$ rows (one for each centroid) and $d$ columns (one for each feature) where $d$ is the number of features of $X$.
+
+## $K$-means algorithm
+
+This function is provided for you.
+You do not need to edit it.
+You simply need to define all the functions it calls.
+
+```{julia}
+#| output: false
+function kmeans(X::AbstractMatrix, k::Int; τ=1e-5, maxiter=500)
+    n, d = size(X) # get the number of observations and features
+
+    # initialize the cluster centroids (μ)
+    μ = init_centroids(X, k)
+    μ_history = [μ]
+
+    is_converged = false # initialize the flag
+    j = 1 # initialize the counter
+
+    # go through the loop until convergence is reached
+    while !is_converged
+        cluster_assignments = assign_clusters(X, μ)
+        cluster_centroids = update_centroids(X, cluster_assignments, k) # update the centroids
+
+        # add the current centroids to the history
+        push!(μ_history, cluster_centroids)
+
+        # check for convergence
+        is_converged = check_convergence(μ_history, τ) # check for convergence
+
+        # if we have run too many iterations, throw an error (avoid infinite loops)
+        if j > maxiter
+            @warn "Failed to converge after $j iterations"
+            return cluster_assignments, μ_history
+        end
+
+        # increase the counter
+        j += 1
+    end
+
+    cluster_assignments = assign_clusters(X, μ)
+
+    return cluster_assignments, μ_history
+end
+```
+
+# Analysis
+
+Our input data for this clustering analysis will be stations from the GHCND dataset (original [here](https://www.ncei.noaa.gov/data/global-historical-climatology-network-daily/doc/ghcnd-stations.txt)).
+We will subset only stations in Texas, and we will cluster on their longitude and latitude.
+
+```{julia}
+#| code-fold: true
+
+# Define a function to parse each line
+function parse_line(line)
+    station = strip(line[1:11])                # Station ID
+    latitude = parse(Float64, strip(line[13:20]))  # Latitude
+    longitude = parse(Float64, strip(line[22:30])) # Longitude
+    elevation = parse(Float64, strip(line[32:37])) # Elevation
+    state = strip(line[39:40])                 # State Abbreviation (if present)
+    name = strip(line[41:end])                 # Station Name
+    return (station, latitude, longitude, elevation, state, name)
+end
+
+# Read the file and process each line
+function read_file(filename)
+    data = []
+    open(filename) do file
+        for line in eachline(file)
+            push!(data, parse_line(line))
+        end
+    end
+    return DataFrame(data, [:Station, :Latitude, :Longitude, :Elevation, :State, :Name])
+end
+
+# Usage
+filename = "data/ghcnd_stations.txt"
+stations = read_file(filename)
+stations = stations[stations[!, "State"].=="TX", :]
+
+describe(stations)
+```
+
+Now we can run the clustering analysis we've implemented
+
+```{julia}
+X = Matrix(stations[!, [:Latitude, :Longitude]])
+K = 10 # choose your own!
+cluster_assignments, μ_history = kmeans(X, K)
+```
+
+# Analysis
+
+Once your code appears to be working:
+
+1. Plot your cluster assignments on a map. Do they look logical? What does / does not make sense to you?
+2. Check for consistency by re-running your code and comparing the plots. Do they look the same? Why or why not?
+3. Plot the (two-dimensional) cluster centroids as a function of the number of iterations.
+4. Try different values of $k$. How does the clustering change? What is the best value of $k$ in your opinion? How could you determine this?
+
+
+If you have extra time, alter other parts of the code (e.g., use elevation to cluster, or use a different distance metric). How does this change your results?
 
