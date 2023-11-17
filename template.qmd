@@ -118,7 +118,7 @@ function kmeans(X::AbstractMatrix, k::Int; τ=1e-5, maxiter=500)
         # check for convergence
         is_converged = check_convergence(μ_history, τ) # check for convergence
 
-        # if we have run too many iterations, throw an error (avoid infinite loops)
+        # if convergence seems unlikely, stop
         if j > maxiter
             @warn "Failed to converge after $j iterations"
             return cluster_assignments, μ_history
